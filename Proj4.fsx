@@ -67,22 +67,22 @@ let mutable num_of_retweets = double 0
 
 let server (mailbox: Actor<_>) =
 
-    let mutable clientToTweets: Map<int, List<string>> = Map.empty
+    let mutable client_to_tweets: Map<int, List<string>> = Map.empty
 
     let rec loop () =
         actor {
-            let! msg = mailbox.Receive()
+            let! message = mailbox.Receive()
 
-            match msg with
+            match message with
             | InitServer (num_of_users) ->
                 for i = 1 to num_of_users do
-                    clientToTweets <- clientToTweets.Add(i, List.empty)
+                    client_to_tweets <- client_to_tweets.Add(i, List.empty)
 
             | TransmitTweetToServer (client, tweet) ->
                 for follower in client_to_followers.[client] do
-                    let mutable allTweets = clientToTweets.[follower]
-                    allTweets <- allTweets @ [ sprintf "Tweet: %s" tweet ]
-                    clientToTweets <- clientToTweets.Add(follower, allTweets)
+                    let mutable every_tweet = client_to_tweets.[follower]
+                    every_tweet <- every_tweet @ [ sprintf "Tweet: %s" tweet ]
+                    client_to_tweets <- client_to_tweets.Add(follower, every_tweet)
                     server_reference <! TransmitTweetToClient(follower, tweet)
 
             | TransmitTweetToClient (client, tweet) ->
@@ -93,11 +93,11 @@ let server (mailbox: Actor<_>) =
 
             | TransmitRetweetToServer (client, retweet) ->
                 for follower in client_to_followers.[client] do
-                    let mutable allTweets = clientToTweets.[follower]
-                    allTweets <-
-                        allTweets
+                    let mutable every_tweet = client_to_tweets.[follower]
+                    every_tweet <-
+                        every_tweet
                         @ [ sprintf "Retweet (by User%i): %s" client retweet ]
-                    clientToTweets <- clientToTweets.Add(follower, allTweets)
+                    client_to_tweets <- client_to_tweets.Add(follower, every_tweet)
                     server_reference
                     <! TransmitRetweetToClient(follower, retweet)
 
@@ -109,20 +109,20 @@ let server (mailbox: Actor<_>) =
 
             | Query_Bulk (client) ->
                 client_to_client_reference.[client]
-                <! QueryBulkResponse(client, clientToTweets.[client])
+                <! QueryBulkResponse(client, client_to_tweets.[client])
 
             | GetHashtag (client, hashtag) ->
-                let allTweets = clientToTweets.[client]
+                let every_tweet = client_to_tweets.[client]
                 let mutable response = List.empty
-                for tweet in allTweets do
+                for tweet in every_tweet do
                     if tweet.IndexOf(hashtag) <> -1 then response <- response @ [ tweet ]
                 client_to_client_reference.[client]
                 <! GetHashtagResponse(client, hashtag, response)
 
             | GetMention (client, mention) ->
-                let allTweets = clientToTweets.[client]
+                let every_tweet = client_to_tweets.[client]
                 let mutable response = List.empty
-                for tweet in allTweets do
+                for tweet in every_tweet do
                     if tweet.IndexOf(mention) <> -1 then response <- response @ [ tweet ]
                 client_to_client_reference.[client]
                 <! GetHashtagResponse(client, mention, response)
@@ -136,64 +136,64 @@ let server (mailbox: Actor<_>) =
 
 let client (mailbox: Actor<_>) =
 
-    let mutable tweetCount = 0
-    let mutable connected = 1
-    let mutable receivedTweets = List.empty
-    let mutable disconnectedTweets = List.empty
+    let mutable count_of_tweets = 0
+    let mutable conn = 1
+    let mutable tweets_received = List.empty
+    let mutable tweets_disconnected = List.empty
 
     let rec loop () =
         actor {
-            let! msg = mailbox.Receive()
+            let! message = mailbox.Receive()
 
-            match msg with
+            match message with
             | Tweet (client, num_of_users) ->
-                if connected = 1 then
-                    let random = Random().Next(1, 101)
+                if conn = 1 then
+                    let rndm = Random().Next(1, 101)
                     let mutable tweet = ""
-                    if random <= 50 then
-                        tweet <- sprintf "This is User%i's TweetNo.%i " client tweetCount
-                    elif random > 50 && random <= 75 then
+                    if rndm <= 50 then
+                        tweet <- sprintf "This is User%i's TweetNo.%i " client count_of_tweets
+                    elif rndm > 50 && rndm <= 75 then
                         tweet <-
-                            sprintf "This is User%i's TweetNo.%i #Hashtag%i " client tweetCount (Random().Next(1, 11))
+                            sprintf "This is User%i's TweetNo.%i #Hashtag%i " client count_of_tweets (Random().Next(1, 11))
                     else
                         tweet <-
                             sprintf
                                 "This is User%i's TweetNo.%i @User%i "
                                 client
-                                tweetCount
+                                count_of_tweets
                                 (Random().Next(1, num_of_users + 1))
                     printfn "User%i tweeted." client
-                    tweetCount <- tweetCount + 1
+                    count_of_tweets <- count_of_tweets + 1
                     server_reference <! TransmitTweetToServer(client, tweet)
 
             | GetTweetFromServer (client, tweet) ->
-                if connected = 0 then
-                    disconnectedTweets <- disconnectedTweets @ [ tweet ]
+                if conn = 0 then
+                    tweets_disconnected <- tweets_disconnected @ [ tweet ]
                 else
-                    receivedTweets <- receivedTweets @ [ tweet ]
-                    if connected = 1
+                    tweets_received <- tweets_received @ [ tweet ]
+                    if conn = 1
                     then printfn "Feed of User%i:\nTweet: %s" client tweet
                     server_reference <! Tweet_Acknowledgment
 
             | Retweet (client, num_of_users) ->
-                if receivedTweets.Length > 0 then
-                    if connected = 1 then
-                        let random = Random().Next(0, receivedTweets.Length)
-                        let retweet = receivedTweets.[random]
+                if tweets_received.Length > 0 then
+                    if conn = 1 then
+                        let rndm = Random().Next(0, tweets_received.Length)
+                        let retweet = tweets_received.[rndm]
                         printfn "User%i retweeted." client
                         server_reference <! TransmitRetweetToServer(client, retweet)
 
             | GetRetweetFromServer (client, retweet) ->
-                receivedTweets <- receivedTweets @ [ retweet ]
-                if connected = 1
+                tweets_received <- tweets_received @ [ retweet ]
+                if conn = 1
                 then printfn "Feed of User%i:\nRetweet: %s" client retweet
                 server_reference <! Retweet_Acknowledgment
 
             | AllRequest_Query (client) -> server_reference <! Query_Bulk(client)
 
-            | QueryBulkResponse (client, allTweets) ->
+            | QueryBulkResponse (client, every_tweet) ->
                 printfn "\nTimeline of User%i after AllTweetsQuery" client
-                for tweet in allTweets do
+                for tweet in every_tweet do
                     printfn "%s" tweet
 
             | GetHashtagRequest (client) ->
@@ -215,17 +215,17 @@ let client (mailbox: Actor<_>) =
                     printfn "%s" tweet
 
             | Disconnect (client) ->
-                connected <- 0
+                conn <- 0
                 printfn "User%i disconnected." client
 
             | Connect (client) ->
-                connected <- 1
-                printfn "User%i connected." client
+                conn <- 1
+                printfn "User%i conn." client
                 printfn "Feed of User%i:" client
-                for tweet in disconnectedTweets do
+                for tweet in tweets_disconnected do
                     printfn "Tweet: %s" tweet
-                    receivedTweets <- receivedTweets @ [ tweet ]
-                disconnectedTweets <- List.empty
+                    tweets_received <- tweets_received @ [ tweet ]
+                tweets_disconnected <- List.empty
 
             | _ -> ()
 
@@ -237,9 +237,9 @@ let client (mailbox: Actor<_>) =
 let clientParent (mailbox: Actor<_>) =
     let rec loop () =
         actor {
-            let! msg = mailbox.Receive()
+            let! message = mailbox.Receive()
 
-            match msg with
+            match message with
             | MakeClients (num_of_users) ->
                 for i = 1 to num_of_users do
                     client_to_client_reference <- client_to_client_reference.Add(i, spawn system (sprintf "client%i" i) client)
@@ -257,18 +257,18 @@ let clientParent (mailbox: Actor<_>) =
 let simulator (mailbox: Actor<_>) =
     let rec loop () =
         actor {
-            let! msg = mailbox.Receive()
+            let! message = mailbox.Receive()
 
-            match msg with
+            match message with
             | Init (num_of_users) ->
                 for i = 1 to num_of_users do
-                    let mutable random =
+                    let mutable rndm =
                         Random().Next(1, int ((num_of_users - i + 2) / 2))
 
-                    if random = 0 then random <- 1
+                    if rndm = 0 then rndm <- 1
 
-                    client_to_num_followers <- client_to_num_followers.Add(i, random)
-                    total_tweets <- total_tweets + double random
+                    client_to_num_followers <- client_to_num_followers.Add(i, rndm)
+                    total_tweets <- total_tweets + double rndm
                     client_to_followers <- client_to_followers.Add(i, Set.empty)
                     client_to_following <- client_to_following.Add(i, Set.empty)
                     server_reference <! InitServer(num_of_users)
@@ -277,18 +277,18 @@ let simulator (mailbox: Actor<_>) =
             | MakeClients (num_of_users) -> client_parent_reference <! MakeClients(num_of_users)
 
             | AllotFollowers (client) ->
-                let numFollowers = client_to_num_followers.[client]
-                for i = 1 to numFollowers do
-                    let mutable random = Random().Next(1, num_of_users + 1)
-                    while random = client
-                          || client_to_following.[random].Contains(client) do
-                        random <- Random().Next(1, num_of_users + 1)
-                    let mutable followingSet = client_to_following.[random]
-                    followingSet <- followingSet.Add(client)
-                    client_to_following <- client_to_following.Add(random, followingSet)
-                    let mutable followerSet = client_to_followers.[client]
-                    followerSet <- followerSet.Add(random)
-                    client_to_followers <- client_to_followers.Add(client, followerSet)
+                let number_of_followers = client_to_num_followers.[client]
+                for i = 1 to number_of_followers do
+                    let mutable rndm = Random().Next(1, num_of_users + 1)
+                    while rndm = client
+                          || client_to_following.[rndm].Contains(client) do
+                        rndm <- Random().Next(1, num_of_users + 1)
+                    let mutable set_of_following = client_to_following.[rndm]
+                    set_of_following <- set_of_following.Add(client)
+                    client_to_following <- client_to_following.Add(rndm, set_of_following)
+                    let mutable set_of_followers = client_to_followers.[client]
+                    set_of_followers <- set_of_followers.Add(rndm)
+                    client_to_followers <- client_to_followers.Add(client, set_of_followers)
 
             | CalculateZero ->
                 for i = 1 to num_of_users do
@@ -312,47 +312,47 @@ let simulator (mailbox: Actor<_>) =
                 f1 <- true
 
             | FirstQueryHashtag ->
-                let mutable randomSet = Set.empty
+                let mutable rndm_set = Set.empty
                 for i = 1 to 10 do
-                    let mutable random = Random().Next(1, num_of_users + 1)
-                    while randomSet.Contains(random) do
-                        random <- Random().Next(1, num_of_users + 1)
-                    randomSet <- randomSet.Add(random)
-                for client in randomSet do
+                    let mutable rndm = Random().Next(1, num_of_users + 1)
+                    while rndm_set.Contains(rndm) do
+                        rndm <- Random().Next(1, num_of_users + 1)
+                    rndm_set <- rndm_set.Add(rndm)
+                for client in rndm_set do
                     client_to_client_reference.[client]
                     <! GetHashtagRequest(client)
                     Threading.Thread.Sleep(100)
                 f1 <- true
 
             | FirstQueryMention ->
-                let mutable randomSet = Set.empty
+                let mutable rndm_set = Set.empty
                 for i = 1 to 10 do
-                    let mutable random = Random().Next(1, num_of_users + 1)
-                    while randomSet.Contains(random) do
-                        random <- Random().Next(1, num_of_users + 1)
-                    randomSet <- randomSet.Add(random)
-                for client in randomSet do
+                    let mutable rndm = Random().Next(1, num_of_users + 1)
+                    while rndm_set.Contains(rndm) do
+                        rndm <- Random().Next(1, num_of_users + 1)
+                    rndm_set <- rndm_set.Add(rndm)
+                for client in rndm_set do
                     client_to_client_reference.[client]
                     <! GetMentionRequest(client)
                     Threading.Thread.Sleep(100)
                 f1 <- true
 
             | InitConnDisc ->
-                let random = Random().Next(1, num_of_users + 1)
-                let mutable disconnectedClients = Set.empty
-                for client in client_to_followers.[random] do
+                let rndm = Random().Next(1, num_of_users + 1)
+                let mutable clients_disconnected = Set.empty
+                for client in client_to_followers.[rndm] do
                     let r = Random().Next(1, 101)
                     if r <= 50 then
-                        disconnectedClients <- disconnectedClients.Add(client)
+                        clients_disconnected <- clients_disconnected.Add(client)
                         client_to_client_reference.[client] <! Disconnect(client)
                         Threading.Thread.Sleep(500)
                 Threading.Thread.Sleep(1000)
                 printfn ""
-                client_to_client_reference.[random]
-                <! Tweet(random, num_of_users)
+                client_to_client_reference.[rndm]
+                <! Tweet(rndm, num_of_users)
                 Threading.Thread.Sleep(1000)
                 printfn ""
-                for client in disconnectedClients do
+                for client in clients_disconnected do
                     client_to_client_reference.[client] <! Connect(client)
                     Threading.Thread.Sleep(500)
                 Threading.Thread.Sleep(1000)
@@ -414,7 +414,7 @@ while temporary do
     if f1 then temporary <- false
 
 stopwatch.Stop()
-let timeRetweet = stopwatch.Elapsed.TotalMilliseconds
+let retweet_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(5000)
 
@@ -428,7 +428,7 @@ while temporary do
     if f1 then temporary <- false
 
 stopwatch.Stop()
-let timeQueryAll = stopwatch.Elapsed.TotalMilliseconds
+let query_all_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(2000)
 
@@ -442,7 +442,7 @@ while temporary do
     if f1 then temporary <- false
 
 stopwatch.Stop()
-let timeQueryHashtag = stopwatch.Elapsed.TotalMilliseconds
+let hashtag_query_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(2000)
 
@@ -456,7 +456,7 @@ while temporary do
     if f1 then temporary <- false
 
 stopwatch.Stop()
-let timeQueryMention = stopwatch.Elapsed.TotalMilliseconds
+let query_mention_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(5000)
 
@@ -470,9 +470,9 @@ while temporary do
     if f1 then temporary <- false
 
 stopwatch.Stop()
-let timeConnectDisconnect = stopwatch.Elapsed.TotalMilliseconds
+let conn_disconn_time = stopwatch.Elapsed.TotalMilliseconds
 
 printfn "\n\nTime Statistics: \n\nTime for Tweeting with %i users and %f tweets: %f\nTime for Retweeting with %i users and %f retweets: %f\nTime for Printing Home Timeline with %i users: %f\nTime for Hashtag Query with 10 users: %f\nTime for Mention Query with 10 users: %f\nTime for Connect Disconnect Simulation: %f"
-    num_of_users total_tweets timeTweet num_of_users total_retweets (timeRetweet - timeTweet) num_of_users
-    (timeQueryAll - timeRetweet) (timeQueryHashtag - timeQueryAll) (timeQueryMention - timeQueryHashtag)
-    (timeConnectDisconnect - timeQueryMention)
+    num_of_users total_tweets timeTweet num_of_users total_retweets (retweet_time - timeTweet) num_of_users
+    (query_all_time - retweet_time) (hashtag_query_time - query_all_time) (query_mention_time - hashtag_query_time)
+    (conn_disconn_time - query_mention_time)
