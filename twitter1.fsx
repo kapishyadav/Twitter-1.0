@@ -81,7 +81,7 @@ let server (mailbox: Actor<_>) =
             | TransmitTweetToServer (client, tweet) ->
                 for follower in client_to_followers.[client] do
                     let mutable every_tweet = client_to_tweets.[follower]
-                    every_tweet <- every_tweet @ [ sprintf "Tweet: %s" tweet ]
+                    every_tweet <- every_tweet @ [ sprintf "Tweet - %s" tweet ]
                     client_to_tweets <- client_to_tweets.Add(follower, every_tweet)
                     server_reference <! TransmitTweetToClient(follower, tweet)
 
@@ -96,7 +96,7 @@ let server (mailbox: Actor<_>) =
                     let mutable every_tweet = client_to_tweets.[follower]
                     every_tweet <-
                         every_tweet
-                        @ [ sprintf "Retweet (by User%i): %s" client retweet ]
+                        @ [ sprintf "Retweeted (by user number %i): %s" client retweet ]
                     client_to_tweets <- client_to_tweets.Add(follower, every_tweet)
                     server_reference
                     <! TransmitRetweetToClient(follower, retweet)
@@ -151,18 +151,18 @@ let client (mailbox: Actor<_>) =
                     let rndm = Random().Next(1, 101)
                     let mutable tweet = ""
                     if rndm <= 50 then
-                        tweet <- sprintf "This is User%i's TweetNo.%i " client count_of_tweets
+                        tweet <- sprintf "User%i's Tweet Number: %i " client count_of_tweets
                     elif rndm > 50 && rndm <= 75 then
                         tweet <-
-                            sprintf "This is User%i's TweetNo.%i #Hashtag%i " client count_of_tweets (Random().Next(1, 11))
+                            sprintf "User%i's Tweet Number: %i #my_hastag%i " client count_of_tweets (Random().Next(1, 11))
                     else
                         tweet <-
                             sprintf
-                                "This is User%i's TweetNo.%i @User%i "
+                                "User%i's TweetNo: %i @User%i "
                                 client
                                 count_of_tweets
                                 (Random().Next(1, num_of_users + 1))
-                    printfn "User%i tweeted." client
+                    printfn "User number %i tweeted!" client
                     count_of_tweets <- count_of_tweets + 1
                     server_reference <! TransmitTweetToServer(client, tweet)
 
@@ -172,7 +172,7 @@ let client (mailbox: Actor<_>) =
                 else
                     tweets_received <- tweets_received @ [ tweet ]
                     if conn = 1
-                    then printfn "Feed of User%i:\nTweet: %s" client tweet
+                    then printfn "User number %i's feed :\nTweet: %s" client tweet
                     server_reference <! Tweet_Acknowledgment
 
             | Retweet (client, num_of_users) ->
@@ -180,28 +180,28 @@ let client (mailbox: Actor<_>) =
                     if conn = 1 then
                         let rndm = Random().Next(0, tweets_received.Length)
                         let retweet = tweets_received.[rndm]
-                        printfn "User%i retweeted." client
+                        printfn "User number %i retweeted." client
                         server_reference <! TransmitRetweetToServer(client, retweet)
 
             | GetRetweetFromServer (client, retweet) ->
                 tweets_received <- tweets_received @ [ retweet ]
                 if conn = 1
-                then printfn "Feed of User%i:\nRetweet: %s" client retweet
+                then printfn "User number %i's Feed:\nRetweet: %s" client retweet
                 server_reference <! Retweet_Acknowledgment
 
             | AllRequest_Query (client) -> server_reference <! Query_Bulk(client)
 
             | QueryBulkResponse (client, every_tweet) ->
-                printfn "\nTimeline of User%i after AllTweetsQuery" client
+                printfn "\nUser%i's timeline after AllTweetsQuery" client
                 for tweet in every_tweet do
                     printfn "%s" tweet
 
             | GetHashtagRequest (client) ->
                 server_reference
-                <! GetHashtag(client, sprintf " #Hashtag%i " (Random().Next(1, 11)))
+                <! GetHashtag(client, sprintf " #my_hastag%i " (Random().Next(1, 11)))
 
             | GetHashtagResponse (client, hashtag, response) ->
-                printfn "\nSearch Results for User%i after searching for %s" client hashtag
+                printfn "\nUser%i's search result after performing search for %s" client hashtag
                 for tweet in response do
                     printfn "%s" tweet
 
@@ -210,18 +210,18 @@ let client (mailbox: Actor<_>) =
                 <! GetMention(client, sprintf " @User%i " (Random().Next(1, num_of_users + 1)))
 
             | GetMentionResponse (client, mention, response) ->
-                printfn "\nSearch Results for User%i after searching for %s" client mention
+                printfn "\n User%i's search result for %s" client mention
                 for tweet in response do
                     printfn "%s" tweet
 
             | Disconnect (client) ->
                 conn <- 0
-                printfn "User%i disconnected." client
+                printfn "User number %i disconnected." client
 
             | Connect (client) ->
                 conn <- 1
-                printfn "User%i conn." client
-                printfn "Feed of User%i:" client
+                printfn "User number %i connected." client
+                printfn "User number %i's feed:" client
                 for tweet in tweets_disconnected do
                     printfn "Tweet: %s" tweet
                     tweets_received <- tweets_received @ [ tweet ]
@@ -375,18 +375,17 @@ server_reference <- spawn system "server" server
 let stopwatch = Diagnostics.Stopwatch.StartNew()
 stopwatch.Stop()
 
-printfn "\n\nStarting Initialization of Network ..."
+printfn "\n\n ...Initializing Network ..."
 simulator_reference <! Init(num_of_users)
 simulator_reference <! MakeClients(num_of_users)
 Threading.Thread.Sleep(20 * num_of_users)
 simulator_reference <! CalculateZero
 
-for i = 1 to num_of_users do
-    printfn "%A : %i : %A" client_to_followers.[i] i client_to_following.[i]
+
 
 Threading.Thread.Sleep(5000)
 
-printfn "\n\nStarting Tweeting ..."
+printfn "\n\n ... Initiate Tweeting ..."
 temporary <- true
 f1 <- false
 stopwatch.Start()
@@ -402,7 +401,7 @@ let timeTweet = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(5000)
 
-printfn "\n\nStarting Retweeting ..."
+printfn "\n\n ... Initiate Re-tweeting ..."
 temporary <- true
 f1 <- false
 stopwatch.Start()
@@ -418,7 +417,7 @@ let retweet_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(5000)
 
-printfn "\n\nStarting Query_Bulk ...\n"
+printfn "\n\n ... Initiating QueryAll ... \n"
 temporary <- true
 f1 <- false
 stopwatch.Start()
@@ -432,7 +431,7 @@ let query_all_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(2000)
 
-printfn "\n\nStarting GetHashtag ...\n"
+printfn "\n\n ... Initiating GetHashtag ...\n"
 temporary <- true
 f1 <- false
 stopwatch.Start()
@@ -446,7 +445,7 @@ let hashtag_query_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(2000)
 
-printfn "\n\nStarting GetMention ...\n"
+printfn "\n\n...Initiating GetMention ...\n"
 temporary <- true
 f1 <- false
 stopwatch.Start()
@@ -460,7 +459,7 @@ let query_mention_time = stopwatch.Elapsed.TotalMilliseconds
 
 Threading.Thread.Sleep(5000)
 
-printfn "\n\nStarting Connection-Disconnection Simulation ..."
+printfn "\n\n... Initiating Simulation - Connection Disconnection ...."
 temporary <- true
 f1 <- false
 stopwatch.Start()
@@ -472,7 +471,7 @@ while temporary do
 stopwatch.Stop()
 let conn_disconn_time = stopwatch.Elapsed.TotalMilliseconds
 
-printfn "\n\nTime Statistics: \n\nTime for Tweeting with %i users and %f tweets: %f\nTime for Retweeting with %i users and %f retweets: %f\nTime for Printing Home Timeline with %i users: %f\nTime for Hashtag Query with 10 users: %f\nTime for Mention Query with 10 users: %f\nTime for Connect Disconnect Simulation: %f"
+printfn "\n\nFINAL METRICS: \n\nTweet time (%i users, %f tweets): %f\nRetweeting time (%i users, %f retweets): %f\nPrint Home Timeline time ( %i users): %f\nHashtag Query time (10 users) : %f\nMention Query time (10 users) : %f\nConnect Disconnect Simulation time: %f"
     num_of_users total_tweets timeTweet num_of_users total_retweets (retweet_time - timeTweet) num_of_users
     (query_all_time - retweet_time) (hashtag_query_time - query_all_time) (query_mention_time - hashtag_query_time)
     (conn_disconn_time - query_mention_time)
